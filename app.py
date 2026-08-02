@@ -2,6 +2,7 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from typing import List, Optional
 from dotenv import load_dotenv
 from langchain_groq import ChatGroq
 from langchain_core.tools import tool
@@ -11,7 +12,7 @@ load_dotenv()
 
 app = FastAPI()
 
-# Enable CORS for local HTML files
+# Enable CORS for all frontend origins
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -33,26 +34,42 @@ def get_pip_guidelines() -> str:
         "5. Clearly outline outcomes if expectations are or aren't met."
     )
 
-# 2. Hardcode Groq key to prevent .env loading errors
-# REPLACE "gsk_..." BELOW WITH YOUR REAL GROQ API KEY FROM CONSOLE.GROQ.COM
-groq_key = os.getenv("GROQ_API_KEY")
-
-llm = ChatGroq(model="llama-3.3-70b-versatile", groq_api_key=groq_key)
-
-# 3. Create Agent
 tools = [get_pip_guidelines]
-agent_executor = create_react_agent(llm, tools)
 
-# 4. FastAPI Route
+# 2. Set up LLM and Agent
+llm = ChatGroq(model_name="llama-3.3-70b-versatile", temperature=0)
+agent = create_react_agent(llm, tools)
+
+# 3. Request Models for Chat History
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+
 class ChatRequest(BaseModel):
     message: str
+    history: Optional[List[ChatMessage]] = []
 
+# 4. Chat Endpoint (PASTE STEP 2 HERE)
 @app.post("/chat")
 async def chat_endpoint(request: ChatRequest):
-    response = agent_executor.invoke({"messages": [("user", request.message)]})
-    bot_reply = response["messages"][-1].content
-    return {"reply": bot_reply}
+    try:
+        # Build prompt using recent history
+        formatted_messages = []
+        for msg in request.history:
+            # Map frontend roles to LangChain roles ('user' / 'assistant')
+            role = "user" if msg.role == "user" else "assistant"
+            formatted_messages.append((role, msg.content))
+            
+        # Add latest user message if not already in history
+        if not formatted_messages or formatted_messages[-1][1] != request.message:
+            formatted_messages.append(("user", request.message))
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("app:app", host="127.0.0.1", port=8000, reload=True)
+        # Run agent with history context
+        response = agent.invoke({"messages": formatted_messages})
+        
+        # Get last message response
+        bot_reply = response["messages"][-1].content
+        return {"reply": bot_reply}
+
+    except Exception as e:
+        return {"reply": f"An error occurred: {str(e)}"}
