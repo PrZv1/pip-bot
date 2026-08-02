@@ -1,7 +1,7 @@
 import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Optional
 from dotenv import load_dotenv
 
@@ -23,8 +23,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 1. Custom Web Search Tool
-@tool
+# 1. Input Schema for Tool (Fixes Groq tool_use_failed error)
+class SearchInput(BaseModel):
+    query: str = Field(description="The search query to look up on the web.")
+
+# Custom Web Search Tool with explicit schema
+@tool("web_search", args_schema=SearchInput)
 def web_search(query: str) -> str:
     """Searches the web for up-to-date labor laws, DOLE guidelines, or HR regulations."""
     try:
@@ -63,8 +67,6 @@ system_prompt = (
 )
 
 llm = ChatGroq(model_name="llama-3.3-70b-versatile", temperature=0)
-
-# FIXED HERE: use `prompt=` instead of `state_modifier=`
 agent = create_react_agent(llm, tools, prompt=system_prompt)
 
 # 4. Request Data Models
