@@ -1,118 +1,371 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <meta charset="UTF-8">
-  <title>PIP AI Assistant</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PIP Assistant AI</title>
+
+  <!-- Marked library for parsing Markdown -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
   <style>
-    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #121212; color: #fff; margin: 0; display: flex; flex-direction: column; height: 100vh; }
-    #header { background: #1f1f1f; padding: 15px 20px; border-bottom: 1px solid #333; }
-    #header h2 { margin: 0; font-size: 18px; color: #4ba3e3; }
-    #chat-box { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
-    .msg { max-width: 75%; padding: 12px 16px; border-radius: 8px; white-space: pre-wrap; font-size: 15px; line-height: 1.4; }
-    .user { align-self: flex-end; background: #007acc; color: #fff; }
-    .bot { align-self: flex-start; background: #252526; color: #ddd; border: 1px solid #3c3c3c; }
-    #input-area { padding: 15px; background: #1f1f1f; border-top: 1px solid #333; display: flex; gap: 10px; }
-    input { flex: 1; padding: 12px; border-radius: 6px; border: 1px solid #3c3c3c; background: #2d2d2d; color: #fff; font-size: 15px; }
-    button { padding: 12px 24px; background: #007acc; border: none; border-radius: 6px; color: white; font-weight: bold; cursor: pointer; }
-    button:hover { background: #005999; }
+    :root {
+      --bg-dark: #121826;
+      --card-bg: #1a2332;
+      --accent: #6366f1;
+      --accent-hover: #4f46e5;
+      --text-main: #f3f4f6;
+      --text-muted: #9ca3af;
+      --user-msg: #2563eb;
+      --bot-msg: #1f2937;
+      --border-color: #2e3748;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    body {
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      padding: 1rem;
+    }
+
+    .chat-container {
+      width: 100%;
+      max-width: 800px;
+      height: 90vh;
+      background-color: var(--card-bg);
+      border-radius: 16px;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+      border: 1px solid var(--border-color);
+      overflow: hidden;
+    }
+
+    .header {
+      padding: 1.2rem 1.5rem;
+      background-color: rgba(18, 24, 38, 0.6);
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .header-avatar {
+      width: 36px;
+      height: 36px;
+      background: linear-gradient(135deg, var(--accent), #a855f7);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      font-size: 1.1rem;
+    }
+
+    .header-info h2 {
+      font-size: 1.1rem;
+      font-weight: 600;
+    }
+
+    .header-info p {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+
+    .chat-box {
+      flex: 1;
+      padding: 1.5rem;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 1.2rem;
+      scroll-behavior: smooth;
+    }
+
+    .message {
+      max-width: 80%;
+      padding: 1rem 1.2rem;
+      border-radius: 14px;
+      line-height: 1.5;
+      font-size: 0.95rem;
+      position: relative;
+      word-wrap: break-word;
+    }
+
+    .user-message {
+      align-self: flex-end;
+      background-color: var(--user-msg);
+      color: white;
+      border-bottom-right-radius: 4px;
+    }
+
+    .bot-message {
+      align-self: flex-start;
+      background-color: var(--bot-msg);
+      color: var(--text-main);
+      border-bottom-left-radius: 4px;
+      border: 1px solid var(--border-color);
+    }
+
+    .bot-message p { margin-bottom: 0.5rem; }
+    .bot-message p:last-child { margin-bottom: 0; }
+    .bot-message ul, .bot-message ol { margin-left: 1.2rem; margin-bottom: 0.5rem; }
+    .bot-message code {
+      background: rgba(0, 0, 0, 0.3);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: monospace;
+    }
+
+    .copy-btn {
+      margin-top: 0.8rem;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid var(--border-color);
+      color: var(--text-muted);
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      transition: all 0.2s ease;
+    }
+
+    .copy-btn:hover {
+      background: rgba(255, 255, 255, 0.15);
+      color: white;
+    }
+
+    .pills-container {
+      display: flex;
+      gap: 8px;
+      padding: 0.8rem 1.5rem;
+      overflow-x: auto;
+      border-top: 1px solid var(--border-color);
+      background-color: rgba(18, 24, 38, 0.3);
+    }
+
+    .pill {
+      background-color: var(--bot-msg);
+      color: var(--text-muted);
+      border: 1px solid var(--border-color);
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 0.8rem;
+      white-space: nowrap;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .pill:hover {
+      background-color: var(--accent);
+      color: white;
+      border-color: var(--accent);
+    }
+
+    .input-area {
+      padding: 1rem 1.5rem;
+      background-color: rgba(18, 24, 38, 0.6);
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    input[type="text"] {
+      flex: 1;
+      background-color: var(--bg-dark);
+      border: 1px solid var(--border-color);
+      color: white;
+      padding: 0.8rem 1.2rem;
+      border-radius: 10px;
+      outline: none;
+      font-size: 0.95rem;
+      transition: border-color 0.2s;
+    }
+
+    input[type="text"]:focus {
+      border-color: var(--accent);
+    }
+
+    button.send-btn {
+      background-color: var(--accent);
+      color: white;
+      border: none;
+      padding: 0.8rem 1.4rem;
+      border-radius: 10px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background-color 0.2s ease;
+    }
+
+    button.send-btn:hover {
+      background-color: var(--accent-hover);
+    }
+
+    .loading-dots {
+      display: inline-block;
+    }
+    .loading-dots::after {
+      content: '.';
+      animation: dots 1.5s steps(5, end) infinite;
+    }
+    @keyframes dots {
+      0%, 20% { content: '.'; }
+      40% { content: '..'; }
+      60% { content: '...'; }
+      80%, 100% { content: ''; }
+    }
   </style>
 </head>
 <body>
 
-  <div id="header">
-    <h2>Performance Improvement Plan (PIP) Assistant</h2>
-  </div>
+  <div class="chat-container">
+    <!-- Header -->
+    <div class="header">
+      <div class="header-avatar">P</div>
+      <div class="header-info">
+        <h2>PIP Assistant AI</h2>
+        <p>Performance Improvement Plan Expert</p>
+      </div>
+    </div>
 
-  <div id="chat-box">
-    <div class="msg bot">Hello! I can help you look up PIP guidelines or generate customized PIP draft plans for your team. What would you like to do?</div>
-  </div>
+    <!-- Chat Message Box -->
+    <div class="chat-box" id="chatBox">
+      <div class="message bot-message">
+        Hello! 👋 I am your HR PIP Assistant. How can I help you draft or manage a Performance Improvement Plan today?
+      </div>
+    </div>
 
-  <div id="input-area">
-    <input type="text" id="userInput" placeholder="e.g. Draft a 30-day PIP for Alex who has attendance issues..." onkeydown="if(event.key==='Enter') sendMsg()" />
-    <button onclick="sendMsg()">Send</button>
+    <!-- Quick Prompt Pills -->
+    <div class="pills-container">
+      <button class="pill" onclick="sendQuickPrompt('Draft a 30-day PIP template for attendance')">💡 30-Day Attendance PIP</button>
+      <button class="pill" onclick="sendQuickPrompt('What are standard PIP timelines?')">⏱️ PIP Timelines</button>
+      <button class="pill" onclick="sendQuickPrompt('How to conduct a PIP check-in meeting')">📋 Meeting Guide</button>
+    </div>
+
+    <!-- User Input Area -->
+    <div class="input-area">
+      <input type="text" id="userInput" placeholder="Type your message here..." />
+      <button class="send-btn" onclick="sendMsg()">Send</button>
+    </div>
   </div>
 
   <script>
-  let chatHistory = [];
+    let chatHistory = [];
 
-  // Enable "Enter" key to send
-  document.getElementById('userInput').addEventListener('keydown', function(e) {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
+    // Enter key support
+    document.getElementById('userInput').addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendMsg();
+      }
+    });
+
+    function sendQuickPrompt(promptText) {
+      document.getElementById('userInput').value = promptText;
       sendMsg();
     }
-  });
 
-  // Function for quick prompt buttons
-  function sendQuickPrompt(text) {
-    document.getElementById('userInput').value = text;
-    sendMsg();
-  }
+    async function sendMsg() {
+      const input = document.getElementById('userInput');
+      const text = input.value.trim();
+      if (!text) return;
 
-  async function sendMsg() {
-    const input = document.getElementById('userInput');
-    const text = input.value.trim();
-    if (!text) return;
+      // 1. Render User Message
+      appendMessage(text, 'user');
+      input.value = '';
 
-    // 1. Add User Message
-    addMessage(text, 'user');
-    input.value = '';
+      // 2. Track History
+      chatHistory.push({ role: "user", content: text });
 
-    // 2. Add to history memory
-    chatHistory.push({ role: "user", content: text });
+      // 3. Render Loading State
+      const botMsgElement = createMessageElement('bot');
+      botMsgElement.innerHTML = `Thinking<span class="loading-dots"></span>`;
 
-    // 3. Show Loading State
-    const loadingId = addMessage("PIP Bot is thinking...", 'bot', true);
+      try {
+        const response = await fetch('https://pip-bot-backend.onrender.com/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            message: text,
+            history: chatHistory
+          })
+        });
 
-    try {
-      const response = await fetch('https://pip-bot-backend.onrender.com/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          message: text,
-          history: chatHistory  // Sending full history to backend!
-        })
-      });
+        const data = await response.json();
+        const replyText = data.reply || "No response received.";
 
-      const data = await response.json();
-      removeMessage(loadingId);
+        // Clear loading state
+        botMsgElement.innerHTML = '';
 
-      // 4. Render Bot Response as Markdown
-      addMessage(data.reply, 'bot');
-      chatHistory.push({ role: "assistant", content: data.reply });
+        // 4. Smooth Typing Effect
+        await typeMarkdownText(botMsgElement, replyText);
 
-    } catch (err) {
-      removeMessage(loadingId);
-      addMessage("Error: Could not reach the server.", 'bot');
+        // Add Copy Button at bottom of bot reply
+        addCopyButton(botMsgElement, replyText);
+
+        // Track Bot Reply in Memory
+        chatHistory.push({ role: "assistant", content: replyText });
+
+      } catch (err) {
+        botMsgElement.innerHTML = "Error: Could not connect to backend server.";
+      }
     }
-  }
 
-  function addMessage(text, sender, isLoading = false) {
-    const chatBox = document.getElementById('chat-box');
-    const div = document.createElement('div');
-    const id = 'msg-' + Date.now();
-    
-    div.id = id;
-    div.className = `message ${sender}-message ${isLoading ? 'loading' : ''}`;
-    
-    // Parse Markdown for bot, keep raw text for user
-    if (sender === 'bot' && !isLoading) {
-      div.innerHTML = marked.parse(text);
-    } else {
+    function createMessageElement(sender) {
+      const chatBox = document.getElementById('chatBox');
+      const div = document.createElement('div');
+      div.className = `message ${sender}-message`;
+      chatBox.appendChild(div);
+      chatBox.scrollTop = chatBox.scrollHeight;
+      return div;
+    }
+
+    function appendMessage(text, sender) {
+      const div = createMessageElement(sender);
       div.innerText = text;
     }
-    
-    chatBox.appendChild(div);
-    chatBox.scrollTop = chatBox.scrollHeight;
-    return id;
-  }
 
-  function removeMessage(id) {
-    const el = document.getElementById(id);
-    if (el) el.remove();
-  }
-</script>
+    // Letter-by-letter typing effect with Markdown parsing
+    async function typeMarkdownText(element, rawText) {
+      const chatBox = document.getElementById('chatBox');
+      let currentText = '';
+      
+      // Breakdown text into small chunk steps
+      for (let i = 0; i < rawText.length; i += 3) {
+        currentText += rawText.slice(i, i + 3);
+        element.innerHTML = marked.parse(currentText);
+        chatBox.scrollTop = chatBox.scrollHeight;
+        await new Promise(resolve => setTimeout(resolve, 15)); // Adjust typing speed here
+      }
+      
+      element.innerHTML = marked.parse(rawText);
+    }
+
+    // Add 1-click Copy button logic
+    function addCopyButton(element, textToCopy) {
+      const btn = document.createElement('button');
+      btn.className = 'copy-btn';
+      btn.innerHTML = `📋 Copy`;
+      btn.onclick = () => {
+        navigator.clipboard.writeText(textToCopy);
+        btn.innerHTML = `✅ Copied!`;
+        setTimeout(() => { btn.innerHTML = `📋 Copy`; }, 2000);
+      };
+      element.appendChild(btn);
+    }
+  </script>
 
 </body>
 </html>
