@@ -5,3 +5,6 @@ python-dotenv
 langchain-groq
 duckduckgo-search
 langgraph
+python-multipart
+pypdf
+openpyxl
