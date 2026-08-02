@@ -4,15 +4,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
 from dotenv import load_dotenv
+
 from langchain_groq import ChatGroq
 from langchain_core.tools import tool
+from langchain_community.tools import DuckDuckGoSearchRun
 from langgraph.prebuilt import create_react_agent
 
 load_dotenv()
 
 app = FastAPI()
 
-# Enable CORS for all frontend origins
+# Enable CORS for frontend requests
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -21,10 +23,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 1. Custom HR/PIP tools
+# 1. Internal PIP Tool
 @tool
 def get_pip_guidelines() -> str:
-    """Returns official guidelines for Performance Improvement Plans."""
+    """Returns official internal guidelines for Performance Improvement Plans."""
     return (
         "Standard PIP Guidelines:\n"
         "1. Define specific, measurable performance goals.\n"
@@ -34,13 +36,23 @@ def get_pip_guidelines() -> str:
         "5. Clearly outline outcomes if expectations are or aren't met."
     )
 
-tools = [get_pip_guidelines]
+# 2. Web Search Tool (DuckDuckGo)
+search_tool = DuckDuckGoSearchRun()
 
-# 2. Set up LLM and Agent
+# Combine both tools
+tools = [get_pip_guidelines, search_tool]
+
+# 3. LLM and Agent Setup
+# The system prompt instructs the agent when to use web search
+system_prompt = (
+    "You are an expert HR Performance Improvement Plan (PIP) Assistant specializing in Philippine HR practices and DOLE labor standards. "
+    "Use your search tool to reference up-to-date Philippine Labor Code regulations, DOLE guidelines, or specific regional laws when answering."
+)
+
 llm = ChatGroq(model_name="llama-3.3-70b-versatile", temperature=0)
-agent = create_react_agent(llm, tools)
+agent = create_react_agent(llm, tools, state_modifier=system_prompt)
 
-# 3. Request Models for Chat History
+# 4. Request Data Models
 class ChatMessage(BaseModel):
     role: str
     content: str
@@ -49,25 +61,19 @@ class ChatRequest(BaseModel):
     message: str
     history: Optional[List[ChatMessage]] = []
 
-# 4. Chat Endpoint (PASTE STEP 2 HERE)
+# 5. Endpoint
 @app.post("/chat")
 async def chat_endpoint(request: ChatRequest):
     try:
-        # Build prompt using recent history
         formatted_messages = []
         for msg in request.history:
-            # Map frontend roles to LangChain roles ('user' / 'assistant')
             role = "user" if msg.role == "user" else "assistant"
             formatted_messages.append((role, msg.content))
             
-        # Add latest user message if not already in history
         if not formatted_messages or formatted_messages[-1][1] != request.message:
             formatted_messages.append(("user", request.message))
 
-        # Run agent with history context
         response = agent.invoke({"messages": formatted_messages})
-        
-        # Get last message response
         bot_reply = response["messages"][-1].content
         return {"reply": bot_reply}
 
