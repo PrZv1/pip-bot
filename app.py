@@ -1,5 +1,7 @@
 import os
-from fastapi import FastAPI
+import glob
+import io
+from fastapi import FastAPI, File, UploadFile, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import List, Optional
@@ -9,12 +11,12 @@ from langchain_groq import ChatGroq
 from langchain_core.tools import tool
 from duckduckgo_search import DDGS
 from langgraph.prebuilt import create_react_agent
+import pypdf
 
 load_dotenv()
 
 app = FastAPI()
 
-# Enable CORS for frontend requests
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -23,11 +25,41 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 1. Pydantic Input Schema for Web Search
-class SearchInput(BaseModel):
-    query: str = Field(description="The web search query string.")
+# Helper function to extract text from a PDF stream
+def extract_text_from_pdf_bytes(pdf_bytes: bytes) -> str:
+    try:
+        reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
+        text = ""
+        for page in reader.pages:
+            extracted = page.extract_text()
+            if extracted:
+                text += extracted + "\n"
+        return text if text.strip() else "[PDF contained no extractable text]"
+    except Exception as e:
+        return f"[Error reading PDF: {str(e)}]"
 
-# 2. Custom Web Search Tool
+# 1. KNOWLEDGE BASE LOADER (Reads both PDF and TXT files in /docs)
+def load_docs_knowledge_base() -> str:
+    docs_text = ""
+    docs_dir = "docs"
+    if os.path.exists(docs_dir):
+        files = glob.glob(os.path.join(docs_dir, "*"))
+        for file_path in files:
+            filename = os.path.basename(file_path)
+            if file_path.endswith(".txt") or file_path.endswith(".md"):
+                with open(file_path, "r", encoding="utf-8") as f:
+                    docs_text += f"\n--- FILE: {filename} ---\n" + f.read() + "\n"
+            elif file_path.endswith(".pdf"):
+                with open(file_path, "rb") as f:
+                    pdf_bytes = f.read()
+                    extracted = extract_text_from_pdf_bytes(pdf_bytes)
+                    docs_text += f"\n--- FILE: {filename} ---\n" + extracted + "\n"
+    return docs_text if docs_text else "No official template files currently stored in docs/ directory."
+
+# 2. TOOLS SETUP
+class SearchInput(BaseModel):
+    query: str = Field(description="The search query string.")
+
 @tool("web_search", args_schema=SearchInput)
 def web_search(query: str) -> str:
     """Searches the web for up-to-date Philippine labor laws, DOLE guidelines, or HR regulations."""
@@ -35,69 +67,62 @@ def web_search(query: str) -> str:
         results = DDGS().text(query, max_results=3)
         if not results:
             return "No relevant search results found."
-        
-        formatted_results = []
-        for r in results:
-            formatted_results.append(f"Title: {r['title']}\nSnippet: {r['body']}\n")
+        formatted_results = [f"Title: {r['title']}\nSnippet: {r['body']}\n" for r in results]
         return "\n---\n".join(formatted_results)
     except Exception as e:
         return f"Search error: {str(e)}"
 
-# 3. Internal PIP Tool
-@tool
-def get_pip_guidelines() -> str:
-    """Returns official internal guidelines for Performance Improvement Plans."""
-    return (
-        "Standard PIP Guidelines:\n"
-        "1. Define specific, measurable performance goals.\n"
-        "2. Set clear timelines (typically 30, 60, or 90 days).\n"
-        "3. Schedule regular check-in meetings (weekly/bi-weekly).\n"
-        "4. Provide required resources, training, and support.\n"
-        "5. Clearly outline outcomes if expectations are or aren't met."
-    )
+@tool("get_internal_form_templates")
+def get_internal_form_templates() -> str:
+    """Retrieves official company PIP form templates, PDFs, and internal HR documentation stored in the knowledge base."""
+    return load_docs_knowledge_base()
 
-tools = [get_pip_guidelines, web_search]
+tools = [web_search, get_internal_form_templates]
 
-# 4. System Prompt & Agent Setup
+# 3. SYSTEM PROMPT
 system_prompt = (
-    "You are an expert HR Performance Improvement Plan (PIP) Assistant specializing in Philippine HR practices and DOLE labor standards.\n"
-    "When calling tools, provide clean JSON arguments without special text wrappers or custom function syntax.\n"
-    "If you ask a search query or answer directly, keep responses accurate, clear, and professional."
+    "You are an expert HR Performance Improvement Plan (PIP) Assistant specializing in Philippine HR practices and DOLE labor standards.\n\n"
+    "Follow this multi-stage PIP agent workflow whenever processing performance data or drafting plans:\n"
+    "1. RISK DETECTION: Analyze performance gaps, KPI drops, or attendance deficiencies.\n"
+    "2. COACHING RECOMMENDATION: Suggest pre-PIP 1-on-1 coaching actions.\n"
+    "3. DOCUMENTATION VALIDATOR: Check against internal templates/PDFs and past coaching notes.\n"
+    "4. PIP ELIGIBILITY & DOLE COMPLIANCE: Ensure PIP meets DOLE due process guidelines (twin-notice rule).\n"
+    "5. PIP BUILDER: Auto-fill the official PIP form template from the knowledge base with exact employee metrics.\n"
+    "6. TIMELINE & SUCCESS COACHING: Provide weekly check-in schedules and guidance.\n\n"
+    "When calling tools, output clean arguments. Always structure answers professionally using clean Markdown formatting."
 )
 
 llm = ChatGroq(model_name="llama-3.3-70b-versatile", temperature=0)
 agent = create_react_agent(llm, tools, prompt=system_prompt)
 
-# 5. Request Data Models
-class ChatMessage(BaseModel):
-    role: str
-    content: str
-
-class ChatRequest(BaseModel):
-    message: str
-    history: Optional[List[ChatMessage]] = []
-
-# 6. Endpoint with Fallback Safety
+# 4. CHAT ENDPOINT (Supports TXT & PDF Uploads)
 @app.post("/chat")
-async def chat_endpoint(request: ChatRequest):
-    formatted_messages = []
-    for msg in request.history:
-        role = "user" if msg.role == "user" else "assistant"
-        formatted_messages.append((role, msg.content))
-        
-    if not formatted_messages or formatted_messages[-1][1] != request.message:
-        formatted_messages.append(("user", request.message))
-
+async def chat_endpoint(
+    message: str = Form(...),
+    file: Optional[UploadFile] = File(None)
+):
     try:
-        # Primary Attempt: Execute with tools enabled
-        response = agent.invoke({"messages": formatted_messages})
-        bot_reply = response["messages"][-1].content
-        return {"reply": bot_reply}
+        user_content = message
+        
+        # If user uploaded a file (PDF or text)
+        if file:
+            file_bytes = await file.read()
+            if file.filename.lower().endswith(".pdf"):
+                extracted_file_text = extract_text_from_pdf_bytes(file_bytes)
+            else:
+                extracted_file_text = file_bytes.decode("utf-8", errors="ignore")
+                
+            user_content += f"\n\n[ATTACHED FILE CONTENT ({file.filename})]:\n{extracted_file_text}"
 
-    except Exception as err:
-        # Fallback Attempt: If Groq tool calling fails, answer directly using LLM knowledge base
+        messages = [("user", user_content)]
+
         try:
-            fallback_response = llm.invoke(formatted_messages)
-            return {"reply": fallback_response.content}
+            response = agent.invoke({"messages": messages})
+            bot_reply = response["messages"][-1].content
+            return {"reply": bot_reply}
         except Exception:
-            return {"reply": "I encountered an issue processing your request. Please try rephrasing your question."}
+            fallback = llm.invoke(messages)
+            return {"reply": fallback.content}
+
+    except Exception as e:
+        return {"reply": f"An error occurred while processing: {str(e)}"}
