@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 from langchain_groq import ChatGroq
 from langchain_core.tools import tool
-from langchain_community.tools import DuckDuckGoSearchRun
+from duckduckgo_search import DDGS
 from langgraph.prebuilt import create_react_agent
 
 load_dotenv()
@@ -23,7 +23,23 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 1. Internal PIP Tool
+# 1. Custom Web Search Tool (Direct & Reliable)
+@tool
+def web_search(query: str) -> str:
+    """Searches the web for up-to-date labor laws, DOLE guidelines, or HR regulations."""
+    try:
+        results = DDGS().text(query, max_results=3)
+        if not results:
+            return "No relevant search results found."
+        
+        formatted_results = []
+        for r in results:
+            formatted_results.append(f"Title: {r['title']}\nSnippet: {r['body']}\n")
+        return "\n---\n".join(formatted_results)
+    except Exception as e:
+        return f"Search error: {str(e)}"
+
+# 2. Internal PIP Tool
 @tool
 def get_pip_guidelines() -> str:
     """Returns official internal guidelines for Performance Improvement Plans."""
@@ -36,17 +52,14 @@ def get_pip_guidelines() -> str:
         "5. Clearly outline outcomes if expectations are or aren't met."
     )
 
-# 2. Web Search Tool (DuckDuckGo)
-search_tool = DuckDuckGoSearchRun()
+tools = [get_pip_guidelines, web_search]
 
-# Combine both tools
-tools = [get_pip_guidelines, search_tool]
-
-# 3. LLM and Agent Setup
-# The system prompt instructs the agent when to use web search
+# 3. System Prompt & Agent Setup
 system_prompt = (
     "You are an expert HR Performance Improvement Plan (PIP) Assistant specializing in Philippine HR practices and DOLE labor standards. "
-    "Use your search tool to reference up-to-date Philippine Labor Code regulations, DOLE guidelines, or specific regional laws when answering."
+    "You can answer general PIP questions using your knowledge base. "
+    "If a user asks about specific Philippine labor laws, DOLE guidelines, due process (twin-notice rule), or regional HR regulations, "
+    "use the web_search tool to find accurate and up-to-date information."
 )
 
 llm = ChatGroq(model_name="llama-3.3-70b-versatile", temperature=0)
