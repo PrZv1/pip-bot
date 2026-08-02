@@ -33,36 +33,67 @@
   </div>
 
   <script>
-    async function sendMsg() {
-      const input = document.getElementById('userInput');
-      const text = input.value.trim();
-      if (!text) return;
-
-      addMessage(text, 'user');
-      input.value = '';
-
-      try {
-        const response = await fetch('https://pip-bot-backend.onrender.com/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: text })
-        });
-        const data = await response.json();
-        addMessage(data.reply, 'bot');
-      } catch (err) {
-        addMessage("Error: Make sure your Python app.py server is running!", 'bot');
-      }
+  // Enable "Enter" key to send message
+  document.getElementById('userInput').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMsg();
     }
+  });
 
-    function addMessage(text, sender) {
-      const chatBox = document.getElementById('chat-box');
-      const div = document.createElement('div');
-      div.className = `msg ${sender}`;
-      div.textContent = text;
-      chatBox.appendChild(div);
-      chatBox.scrollTop = chatBox.scrollHeight;
+  async function sendMsg() {
+    const input = document.getElementById('userInput');
+    const text = input.value.trim();
+    if (!text) return;
+
+    // 1. Render User Message
+    addMessage(text, 'user');
+    input.value = '';
+
+    // 2. Show Loading Indicator
+    const loadingId = addMessage("PIP Bot is thinking...", 'bot', true);
+
+    try {
+      const response = await fetch('https://pip-bot-backend.onrender.com/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: text })
+      });
+
+      const data = await response.json();
+
+      // 3. Replace loading message with actual bot reply
+      removeMessage(loadingId);
+      addMessage(data.reply, 'bot');
+
+    } catch (err) {
+      removeMessage(loadingId);
+      addMessage("Error: Could not reach the server. Please try again!", 'bot');
     }
-  </script>
+  }
+
+  function addMessage(text, sender, isLoading = false) {
+    const chatBox = document.getElementById('chat-box');
+    const div = document.createElement('div');
+    const id = 'msg-' + Date.now();
+    
+    div.id = id;
+    div.className = `message ${sender}-message ${isLoading ? 'loading' : ''}`;
+    div.innerText = text;
+    
+    chatBox.appendChild(div);
+
+    // Auto-scroll to the bottom of the chat box
+    chatBox.scrollTop = chatBox.scrollHeight;
+
+    return id;
+  }
+
+  function removeMessage(id) {
+    const el = document.getElementById(id);
+    if (el) el.remove();
+  }
+</script>
 
 </body>
 </html>
