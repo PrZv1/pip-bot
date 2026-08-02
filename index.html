@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <meta charset="UTF-8">
   <title>PIP AI Assistant</title>
   <style>
@@ -33,7 +34,9 @@
   </div>
 
   <script>
-  // Enable "Enter" key to send message
+  let chatHistory = [];
+
+  // Enable "Enter" key to send
   document.getElementById('userInput').addEventListener('keydown', function(e) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -41,34 +44,47 @@
     }
   });
 
+  // Function for quick prompt buttons
+  function sendQuickPrompt(text) {
+    document.getElementById('userInput').value = text;
+    sendMsg();
+  }
+
   async function sendMsg() {
     const input = document.getElementById('userInput');
     const text = input.value.trim();
     if (!text) return;
 
-    // 1. Render User Message
+    // 1. Add User Message
     addMessage(text, 'user');
     input.value = '';
 
-    // 2. Show Loading Indicator
+    // 2. Add to history memory
+    chatHistory.push({ role: "user", content: text });
+
+    // 3. Show Loading State
     const loadingId = addMessage("PIP Bot is thinking...", 'bot', true);
 
     try {
       const response = await fetch('https://pip-bot-backend.onrender.com/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text })
+        body: JSON.stringify({ 
+          message: text,
+          history: chatHistory  // Sending full history to backend!
+        })
       });
 
       const data = await response.json();
-
-      // 3. Replace loading message with actual bot reply
       removeMessage(loadingId);
+
+      // 4. Render Bot Response as Markdown
       addMessage(data.reply, 'bot');
+      chatHistory.push({ role: "assistant", content: data.reply });
 
     } catch (err) {
       removeMessage(loadingId);
-      addMessage("Error: Could not reach the server. Please try again!", 'bot');
+      addMessage("Error: Could not reach the server.", 'bot');
     }
   }
 
@@ -79,13 +95,16 @@
     
     div.id = id;
     div.className = `message ${sender}-message ${isLoading ? 'loading' : ''}`;
-    div.innerText = text;
+    
+    // Parse Markdown for bot, keep raw text for user
+    if (sender === 'bot' && !isLoading) {
+      div.innerHTML = marked.parse(text);
+    } else {
+      div.innerText = text;
+    }
     
     chatBox.appendChild(div);
-
-    // Auto-scroll to the bottom of the chat box
     chatBox.scrollTop = chatBox.scrollHeight;
-
     return id;
   }
 
