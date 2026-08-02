@@ -23,7 +23,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 1. Custom Web Search Tool (Direct & Reliable)
+# 1. Custom Web Search Tool
 @tool
 def web_search(query: str) -> str:
     """Searches the web for up-to-date labor laws, DOLE guidelines, or HR regulations."""
@@ -63,7 +63,9 @@ system_prompt = (
 )
 
 llm = ChatGroq(model_name="llama-3.3-70b-versatile", temperature=0)
-agent = create_react_agent(llm, tools, state_modifier=system_prompt)
+
+# FIXED HERE: use `prompt=` instead of `state_modifier=`
+agent = create_react_agent(llm, tools, prompt=system_prompt)
 
 # 4. Request Data Models
 class ChatMessage(BaseModel):
