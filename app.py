@@ -23,14 +23,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 1. Input Schema for Tool (Fixes Groq tool_use_failed error)
+# 1. Pydantic Input Schema for Web Search
 class SearchInput(BaseModel):
-    query: str = Field(description="The search query to look up on the web.")
+    query: str = Field(description="The web search query string.")
 
-# Custom Web Search Tool with explicit schema
+# 2. Custom Web Search Tool
 @tool("web_search", args_schema=SearchInput)
 def web_search(query: str) -> str:
-    """Searches the web for up-to-date labor laws, DOLE guidelines, or HR regulations."""
+    """Searches the web for up-to-date Philippine labor laws, DOLE guidelines, or HR regulations."""
     try:
         results = DDGS().text(query, max_results=3)
         if not results:
@@ -43,7 +43,7 @@ def web_search(query: str) -> str:
     except Exception as e:
         return f"Search error: {str(e)}"
 
-# 2. Internal PIP Tool
+# 3. Internal PIP Tool
 @tool
 def get_pip_guidelines() -> str:
     """Returns official internal guidelines for Performance Improvement Plans."""
@@ -58,18 +58,17 @@ def get_pip_guidelines() -> str:
 
 tools = [get_pip_guidelines, web_search]
 
-# 3. System Prompt & Agent Setup
+# 4. System Prompt & Agent Setup
 system_prompt = (
-    "You are an expert HR Performance Improvement Plan (PIP) Assistant specializing in Philippine HR practices and DOLE labor standards. "
-    "You can answer general PIP questions using your knowledge base. "
-    "If a user asks about specific Philippine labor laws, DOLE guidelines, due process (twin-notice rule), or regional HR regulations, "
-    "use the web_search tool to find accurate and up-to-date information."
+    "You are an expert HR Performance Improvement Plan (PIP) Assistant specializing in Philippine HR practices and DOLE labor standards.\n"
+    "When calling tools, provide clean JSON arguments without special text wrappers or custom function syntax.\n"
+    "If you ask a search query or answer directly, keep responses accurate, clear, and professional."
 )
 
 llm = ChatGroq(model_name="llama-3.3-70b-versatile", temperature=0)
 agent = create_react_agent(llm, tools, prompt=system_prompt)
 
-# 4. Request Data Models
+# 5. Request Data Models
 class ChatMessage(BaseModel):
     role: str
     content: str
@@ -78,21 +77,27 @@ class ChatRequest(BaseModel):
     message: str
     history: Optional[List[ChatMessage]] = []
 
-# 5. Endpoint
+# 6. Endpoint with Fallback Safety
 @app.post("/chat")
 async def chat_endpoint(request: ChatRequest):
-    try:
-        formatted_messages = []
-        for msg in request.history:
-            role = "user" if msg.role == "user" else "assistant"
-            formatted_messages.append((role, msg.content))
-            
-        if not formatted_messages or formatted_messages[-1][1] != request.message:
-            formatted_messages.append(("user", request.message))
+    formatted_messages = []
+    for msg in request.history:
+        role = "user" if msg.role == "user" else "assistant"
+        formatted_messages.append((role, msg.content))
+        
+    if not formatted_messages or formatted_messages[-1][1] != request.message:
+        formatted_messages.append(("user", request.message))
 
+    try:
+        # Primary Attempt: Execute with tools enabled
         response = agent.invoke({"messages": formatted_messages})
         bot_reply = response["messages"][-1].content
         return {"reply": bot_reply}
 
-    except Exception as e:
-        return {"reply": f"An error occurred: {str(e)}"}
+    except Exception as err:
+        # Fallback Attempt: If Groq tool calling fails, answer directly using LLM knowledge base
+        try:
+            fallback_response = llm.invoke(formatted_messages)
+            return {"reply": fallback_response.content}
+        except Exception:
+            return {"reply": "I encountered an issue processing your request. Please try rephrasing your question."}
